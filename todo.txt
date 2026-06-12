@@ -1,0 +1,100 @@
+# AuraSaaS (全域商业智能与多体协同中台) - 协同开发 TODO
+
+## Phase 1: 项目初始化与基础设施构建
+- [x] 1.1 初始化工程目录与依赖 (FastAPI+Vue3+SQLite+ChromaDB)
+- [x] 1.2 后端基础架构与头像存储
+  - [x] FastAPI 基础路由、全局 CORS
+  - [x] 统一错误捕获 + 标准化 API 响应
+  - [x] POST /api/user/upload-avatar 头像上传接口
+  - [x] 配置文件上传静态目录 (backend/uploads/)
+  - [x] User 模型添加 avatar_url 字段
+- [x] 1.3 前端 Pinia 全局状态
+  - [x] auth store (token/user)
+  - [x] dashboard store
+  - [x] 添加 userProfile store (avatar, selectedStoreId, selectedModel)
+  - [x] 封装 UploadFile 请求
+
+## Phase 2: 数据库与 Mock 数据
+- [x] 2.1 SQLite ORM 模型 (12 张表)
+- [x] 2.2 ChromaDB 向量知识库 (8 篇 SOP)
+- [x] 2.3 Mock 数据生成脚本 (4 门店, 90 天)
+
+## Phase 3: 商品管理 CRUD 与 BI 接口
+- [x] 3.1 商品 SKU 独立 API
+  - [x] POST /api/sku/add (FormData + 图片)
+  - [x] DELETE /api/sku/delete/{sku_id}
+  - [x] PUT /api/sku/update/{sku_id} (支持图片覆盖)
+  - [x] GET /api/sku/list (分页、筛选、搜索)
+  - [x] GET /api/sku/{sku_id} (详情)
+  - [x] SkuPerformance 模型添加 image_url, price 字段
+- [x] 3.2 BI 看板统计 API
+- [x] 3.3 前端导航栏
+
+## Phase 4: LangGraph 多体编排与智能导入
+- [x] 4.1 多模型 DeepSeek 客户端
+  - [x] 封装模型调用工具类 (deepseek-chat / deepseek-reasoner / deepseek-v4)
+  - [x] SSE 流式捕获 <think> 推理流
+  - [x] 前端传参动态切换模型
+- [x] 4.2 智能导入 Agent
+  - [x] POST /api/agent/import-data (支持 Excel/CSV)
+  - [x] DeepSeek 语义映射 (发现字段不匹配时)
+  - [x] SSE 流式日志: [识别表头] → [语义映射] → [清洗导入]
+- [x] 4.3 LangGraph StateGraph (8 节点闭环)
+
+## Phase 5: 前端交互极致打磨
+- [x] 5.1 智能分析页 (AIAnalysis.vue) 升级
+  - [x] DeepSeek 模型选择器下拉框 (V3 / R1 / V4 / V4-Pro)
+  - [x] 模型选择器下方指引小字
+  - [x] 智能数据导入组件 (拖拽上传 + 流式日志)
+  - [x] ThoughtStream.vue 思考链渲染组件
+- [x] 5.2 商品管理页 (Products.vue) 重做
+  - [x] 商品列表 (卡片/网格布局, 展示图片/价格/销量/毛利)
+  - [x] 添加商品 (图片选择 + 实时预览)
+  - [x] 删除商品 (二次确认)
+  - [x] 悬浮半屏抽屉编辑 (Floating Drawer Sheet)
+    - SKU ID 只读, 图片重新上传/预览
+    - 名称输入, 分类 Picker
+    - 价格滑块, 毛利率实时联动计算
+    - Loading 动效异步保存
+- [x] 5.3 系统设置页 (Settings.vue) 升级
+  - [x] 个人头像更换 (点击→选图→上传→全站同步)
+  - [x] DeepSeek 模型切换框 + 指引小字
+  - [x] Pinia 全局状态同步
+
+## Phase 6: Docker 与文档
+- [x] 6.1 docker-compose.yml
+- [x] 6.2 中英文 README.md
+
+---
+
+## 今日进度 (2026-06-04)
+### 已完成
+1. ✅ Phase 1.2 — POST /api/user/upload-avatar + 静态目录 backend/uploads/
+2. ✅ Phase 1.3 — userProfile Pinia store + uploadFile 封装
+3. ✅ Phase 3.1 — SKU CRUD API (add/delete/update/list/detail) 含图片管理
+4. ✅ Phase 4.1 — DeepSeek 多模型客户端 (chat/stream SSE + think 推理捕获)
+5. ✅ Phase 4.2 — POST /api/agent/import-data (Excel/CSV) + AI 语义映射 + SSE 流式日志
+6. ✅ Phase 5.1 — AIAnalysis.vue 添加模型选择器 + 智能导入面板
+7. ✅ Phase 5.2 — Products.vue 重做 (卡片布局/CRUD/浮动抽屉/图片预览)
+8. ✅ Phase 5.3 — Settings.vue 升级 (头像上传/模型选择/userProfile 同步)
+9. ✅ ThoughtStream.vue 思考链渲染组件
+
+### 新增文件
+- backend/app/api/user.py (头像上传 + 个人信息 API)
+- backend/app/api/sku.py (SKU CRUD API)
+- backend/app/api/agent_import.py (智能导入 Agent + SSE)
+- backend/app/services/deepseek_client.py (多模型客户端)
+- frontend/src/stores/userProfile.js (用户偏好 store)
+- frontend/src/components/ThoughtStream.vue (思考链渲染)
+
+### 修改文件
+- backend/app/main.py (注册新路由 + 静态文件挂载)
+- backend/app/agents/graph.py (使用新 DeepSeek 客户端)
+- backend/app/schemas/auth.py (UserResponse 添加 avatar_url)
+- backend/app/api/auth.py (/me 端点返回 avatar_url)
+- frontend/src/utils/request.js (streamSSE 支持 POST/body)
+- frontend/src/views/Products.vue (完整重写)
+- frontend/src/views/Settings.vue (头像/模型升级)
+- frontend/src/views/AIAnalysis.vue (模型选择器/智能导入面板)
+
+### 全部主要任务已完成 🎉

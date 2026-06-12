@@ -1,0 +1,157 @@
+AuraSaaS Agent 完整重构 TODO List
+=====================================
+
+目标：从固定 DAG 工作流 → 自治 ReAct Agent（Think → Act → Observe → Think → Answer）
+
+
+Phase 0：基础设施准备
+---------------------
+[ ] 0.1 新建 backend/app/agents/tool_schemas.py
+      - 给每个工具写 OpenAI Function Calling 格式的 JSON Schema
+      - 包含 name / description / parameters（带 required 字段）
+      - 先覆盖 6 个核心工具：
+        get_daily_summary, detect_business_anomalies, analyze_sku_trends,
+        check_external_context, retrieve_knowledge, get_store_detail
+      - 新建 TOOL_MAP 字典：工具名 → 函数引用
+
+[ ] 0.2 检查 deepseek_client.py 是否支持 tools 参数
+      - OpenAI SDK 的 chat.completions.create 需要能传 tools= 参数
+      - 如果当前 deepseek_client.chat() 不支持，需要加 tools 参数透传
+      - 同样需要支持 tool_choice="auto"
+
+
+Phase 1：核心 ReAct 循环（MVP）
+--------------------------------
+[ ] 1.1 新建 backend/app/agents/react_agent.py
+      - 写 SYSTEM_PROMPT：定义 Agent 角色、可用工具列表、决策规则
+      - 实现 react_loop_stream() 函数：
+        a. 初始化 messages = [system_prompt, context, user_query]
+        b. 进入循环（最多 15 轮迭代）：
+           1. 调 LLM，传入 messages + tools + tool_choice="auto"
+           2. 如果 LLM 返回 tool_calls → 逐个执行 → 结果塞回 messages
+           3. 如果 LLM 返回纯文本 → 认为已完成，输出最终回答
+           4. 每步通过 SSE yield 推送给前端
+        c. 设置 循环终止条件：
+          - LLM 不再调用工具（输出纯文本）
+          - 达到最大迭代次数 15
+          - Token/时间超限
+      - 每轮记录 trace_steps，最终写入 AgentTrace
+
+[ ] 1.2 新增 SSE 事件类型
+      - tool_call:     LLM 决定调用的工具名 + 参数
+      - tool_result:   工具执行结果
+      - thinking:      LLM 的推理过程（如果有 reasoning 模型）
+      - final_answer:  最终回答（不再调工具时输出）
+      - error:         异常
+      这些事件类型和前端已有的基本兼容
+
+[ ] 1.3 新增 API 端点 /api/agent/stream-react
+      - 在 backend/app/api/agent.py 中新增路由
+      - 调用 react_loop_stream() 而非原来的 run_agent_stream()
+      - 参数不变：query, store_id, start_date, end_date
+      - 返回 EventSourceResponse
+
+
+Phase 2：完善工具系统
+---------------------
+[ ] 2.1 把剩余所有工具都 Schema 化
+      - forecast_metric, compare_periods, rank_stores
+      - search_products, list_all_stores
+      - calculate_roi, evaluate_strategy_risk
+      - generate_campaign_copy, generate_marketing_strategy
+      - save_agent_memory, search_agent_memory
+      - create_anomaly_tasks
+      - add_product, add_staff_member, add_store_metric
+
+[ ] 2.2 工具执行安全壳
+      - 所有工具调用包 try/except，出错返回 JSON error 而不是崩
+      - 对危险操作（add/delete）加确认逻辑
+      - 限制单次对话最多调用工具次数
+
+[ ] 2.3 工具执行超时
+      - 单个工具执行超过 10 秒自动中断
+      - 返回 timeout error 给 LLM，LLM 自己决定重试还是跳过
+
+
+Phase 3：HITL（人在回路）融入 ReAct
+-----------------------------------
+[ ] 3.1 把审批逻辑改成「特殊工具」
+      - 新增 propose_approval 工具：LLM 认为需要审批时主动调用
+      - 工具返回 approval_id，前端弹出审批卡片
+      - 审批完成后，结果以 tool_result 形式返回给 LLM
+      - LLM 根据审批结果继续下一步（通过→生成文案，驳回→修改方案）
+
+[ ] 3.2 审批事件 SSE 推送
+      - approval_required 事件：需要审批时推给前端
+      - approval_update 事件：审批状态变更时推给前端
+      - 复用现有 approve/reject API，逻辑不变
+
+
+Phase 4：前端适配
+-----------------
+[ ] 4.1 AgentPipeline.vue 改动态步骤
+      - 不再硬编码 8 个固定节点
+      - 改为接收 steps 数组，动态渲染
+      - 每个 step 显示：
+        icon（按工具名映射）、tool_name、耗时、结果摘要
+      - 支持折叠/展开每个步骤的详情
+
+[ ] 4.2 AIAnalysisSidebar.vue 适配新 SSE 事件
+      - 新增 tool_call / tool_result 事件的处理
+      - ThoughtStream 展示 LLM 推理过程
+      - 实时更新动态 Pipeline 进度
+
+[ ] 4.3 新增「Agent 思考过程」可视化
+      - 显示当前进行到第几轮
+      - 显示 LLM 刚调了什么工具、拿到了什么结果
+      - 最后显示「已完成」状态
+
+
+Phase 5：增强 Agent 能力
+-------------------------
+[ ] 5.1 Agent 自省机制
+      - 工具调用失败时，LLM 自己分析错误原因
+      - 自动换一种方式重试（比如换个参数）
+      - 最多重试 3 次，然后告知用户
+
+[ ] 5.2 多步推理链
+      - 支持 LLM 一次调用多个独立工具（并行执行）
+      - 支持 LLM 先预估结果再调工具验证
+      - 复杂问题自动拆成子问题逐步求解
+
+[ ] 5.3 上下文窗口管理
+      - 对话过长时自动摘要前面的工具结果
+      - 保留关键数据，丢弃冗余内容
+      - 避免超出 LLM context 限制
+
+[ ] 5.4 Agent 记忆
+      - 把本次对话的关键发现写入 AgentMemory
+      - 下次对话时自动注入相关历史记忆
+      - 跨会话的上下文连续性
+
+
+Phase 6：测试 & 文档
+--------------------
+[ ] 6.1 写 react_agent 的单元测试
+      - Mock LLM 返回，验证循环逻辑
+      - 测试工具调用→结果回传→继续决策的链路
+      - 测试最大迭代次数终止
+      - 测试工具调用失败的降级
+
+[ ] 6.2 端到端人工测试
+      - 问「3号店今天营收怎么样？」→ 验证单工具调用就回答
+      - 问「退单率为什么高了？」→ 验证多轮工具调用链
+      - 问「帮我做个活动方案」→ 验证走到审批→文案
+      - 问「你好」→ 验证不走工具直接回答
+
+[ ] 6.3 更新 README 和 DESIGN.md
+      - 架构图从固定 DAG 改成 ReAct 循环
+      - 更新工作流说明
+
+
+优先级建议
+----------
+  立即做: Phase 0 → Phase 1 → 跑通第一个 ReAct Demo
+  接着做: Phase 4（前端适配，不然看不到效果）
+  然后做: Phase 2（补齐所有工具）
+  最后做: Phase 3 → Phase 5 → Phase 6

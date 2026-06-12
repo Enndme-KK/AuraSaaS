@@ -1,0 +1,46 @@
+# Environment files
+.env
+.env.*
+!.env.example
+backend/.env
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend build output
+dist/
+build/
+coverage/
+.vite/
+
+# Local data and databases
+*.db
+*.sqlite
+*.sqlite3
+chroma/
+.chroma/
+
+# Logs
+*.log
+logs/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local assistant/tooling state
+.claude/
